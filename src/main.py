@@ -151,18 +151,21 @@ def main() -> None:
     end_ip: list = []
     status: list = []
 
+    number_attempts: int = 0
+
     start_ip, end_ip, status = adjustOptions()
 
     ip4_range: list[list] = [start_ip, end_ip]
     act_ip4: list[int] = list(ip4_range[0])
-    print("IPv4 range is :", ip4_range)
-    print("Accepted Status Code :", status)
-    print(f"{'-'*20}\nPress Ctrl+c and wait to finish.")
+    print("IPv4 Range set to :", ip4_range)
+    print("Accept Status Code :", status)
+    print(f"{'-'*20}\nPress Ctrl+c to stop searching.")
     try:
         while act_ip4 != list(ip4_range[1]):
+            number_attempts += 1
 
             for x in range(ip4_range[0][3], 256):
-                act_ip4[3]:  int = x
+                act_ip4[3] = x
 
                 if act_ip4 == list(ip4_range[1]):
                     break
@@ -194,12 +197,12 @@ def main() -> None:
             if act_ip4[2] < 255:
                 act_ip4[2] += 1
             else:
-                act_ip4[2]: int = 0
+                act_ip4[2] = 0
                 act_ip4[1] += 1
                 print(act_ip4)
 
             if not act_ip4[1] <= 255:
-                act_ip4[1]: int = 0
+                act_ip4[1] = 0
                 act_ip4[0] += 1
         else:
             print(act_ip4)
