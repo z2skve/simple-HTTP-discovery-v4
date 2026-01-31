@@ -1,40 +1,33 @@
-#! /bin/bash/ python
+######################################################################
+#                               main                                 #
+######################################################################
+
 import queue
-import argparse
 import time
 import requests
 import pycurl
 import socket
 import threading
-from io import BytesIO
 
+from io import BytesIO  
 
-def saveData(ip: str, data: str, domain: str, output: queue) -> None:
-    """
-    Creates a queue to save the data of each thread individually.
-    """
-    if not domain:
-        domain = "[DOMAIN NOT FOUND]"
-
-    all_data = f"""Domain : {domain}\nIP : {ip}\nGET :
-        \n\n {'-'*20}\n {data} \n {'-'*20}\n\n"""
-    output.put(all_data)
+import v4logger
+import v4parser
 
 
 def reverse_dns(ip: str) -> str | None:
     """
-    Retrieves the Domain Name of the IP given
-    if possible.
+    Retrieves information if found of a given IP.
     """
 
     try:
-        domain_name = socket.gethostbyaddr(ip)
-        return domain_name[0]
+        domain_name, alias, addr_list = socket.gethostbyaddr(ip)
+        return domain_name
     except socket.herror:
         return None
 
 
-def requestGET(act_ip4: list, output: queue, status_codes: list) -> str | None:
+def get_request(act_ip4: list, output: queue, status_codes: list) -> str | None:
     """
     Simple function to retrieve if a URL is available.
     """
@@ -42,9 +35,10 @@ def requestGET(act_ip4: list, output: queue, status_codes: list) -> str | None:
     try:
         ip = ".".join(map(str, act_ip4))
         response = requests.get(f'http://{ip}', timeout=5)
+
         if response.status_code in status_codes:
             print(f"\n[SUCCESS] Found URL available {ip}")
-            print(cURL_available_ip(ip, output), "\n<", "-"*20, ">")
+            print(curl_available_ip(ip, output), "\n<", "-"*20, ">")
         else:
             # print(f"[FAIL] URL not available {ip}")
             return None
@@ -53,7 +47,7 @@ def requestGET(act_ip4: list, output: queue, status_codes: list) -> str | None:
         return None
 
 
-def cURL_available_ip(ip: tuple, output: queue) -> str | None:
+def curl_available_ip(ip: tuple, output: queue) -> str | None:
     """
     Basic function to return the str with the curl
     the webpage which was available.
@@ -74,74 +68,16 @@ def cURL_available_ip(ip: tuple, output: queue) -> str | None:
         print(domain, "\n", packed_text, flush=True)
         cURL.close()
         decodedBuffer = buffer.getvalue().decode('utf-8')
-        saveData(ip, decodedBuffer, domain, output)
+        v4logger.queue_data_manager(ip, decodedBuffer, domain, output)
         return decodedBuffer
 
     except pycurl.error as e:
         print(f"An error occurred: {e}")
         return None
 
-
-def adjustFirstIP(ip: str = "0.0.0.0") -> list[int]:
-    """
-    Just transforms the str ipv4 into a list with its
-    int numbers.
-    """
-    ip = list(map(int, ip.split(".")))
-    return ip
-
-
-def adjustSecondIP(ip: str = "255.255.255.255") -> list[int]:
-    """
-    Just transforms the str ipv4 into a list with its
-    int numbers.
-    """
-    ip = list(map(int, ip.split(".")))
-    return ip
-
-
-def adjustOptions() -> list:
-    """
-    Adjust the IP ranges by looking into the sys.argv
-    introduced, also the response code status wanted.
-    """
-    parser = argparse.ArgumentParser(
-        description="""
-        Attempts a POST request over HTTP to ports within the specified
-        range for the given IP addresses and returns the results along
-        with additional relevant information.
-
-    """
-    )
-    parser.add_argument(
-        '-s',
-        '--status-code',
-        type=int,
-        default=[200],
-        nargs='+',
-        help='List of acceptable status codes. Default is 200.'
-    )
-    parser.add_argument(
-        '--start-ip',
-        type=adjustFirstIP,
-        default=[0, 0, 0, 0],
-        help="The starting IP address of the range"
-    )
-    parser.add_argument(
-        '--end-ip',
-        type=adjustSecondIP,
-        default=[255, 255, 255, 255],
-        help="The ending IP address of the range"
-    )
-    args = parser.parse_args()
-    options = [args.start_ip, args.end_ip, args.status_code]
-
-    return options
-
-
 def main() -> None:
     """
-    Initial function which defines each IP.
+    Main function to run the HTTP discovery tool.
     """
 
     threads: list[threading.Thread] = []
@@ -153,7 +89,7 @@ def main() -> None:
 
     number_attempts: int = 0
 
-    start_ip, end_ip, status = adjustOptions()
+    start_ip, end_ip, status = v4parser.adjust_options()
 
     ip4_range: list[list] = [start_ip, end_ip]
     act_ip4: list[int] = list(ip4_range[0])
@@ -180,7 +116,7 @@ def main() -> None:
                     time.sleep(5)
 
                 thread = threading.Thread(
-                    target=requestGET,
+                    target=get_request,
                     args=(
                         act_ip4,
                         output_queue,
@@ -208,15 +144,12 @@ def main() -> None:
             print(act_ip4)
 
     except KeyboardInterrupt:
-
-        print("[DONT QUIT] Saving Data.")
-
-        time.sleep(8)
+        time.sleep(1)
         results = []
         while not output_queue.empty():
             results.append(output_queue.get())
 
-        with open("dataLogs/log", "a") as file:
+        with open("logs/log.txt", "a") as file:
             for result in results:
                 file.write(result)
                 time.sleep(0.2)
