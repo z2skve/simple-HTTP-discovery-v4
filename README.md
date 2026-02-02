@@ -10,6 +10,8 @@ A high-performance, asynchronous IPv4 HTTP discovery tool written in Python. Des
 * **DNS Resolution:** Integrated reverse DNS lookups for discovered targets.
 * **Real-time Logging:** Asynchronous file writing via a dedicated worker thread.
 
+> ![License](pictures/cap1.png)
+
 ## 🛠️ Installation
 
 1. **Clone the repository:**
