@@ -46,7 +46,7 @@ def get_request(actual_ip: str, output_queue: queue.Queue, status_codes: list) -
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+    } 
 
     try:
         response = requests.get(
@@ -117,8 +117,12 @@ def main() -> None:
             yield current_ip
             curr += 1
 
-    max_threads = 100
-    max_queue_size = max_threads * 2 
+    # Number of threads to use
+    #########################
+    max_threads: int = 100
+    #########################
+
+    max_queue_size: int= max_threads * 2 
 
     semaphore = threading.BoundedSemaphore(value=max_queue_size)
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_threads)
