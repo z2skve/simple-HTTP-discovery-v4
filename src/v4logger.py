@@ -3,6 +3,24 @@
 ######################################################################
 from queue import Queue
 
+def file_writer_worker(output_queue: Queue, filename: str) -> None:
+    """
+    Worker thread to write output data to a file.
+    """
+    with open(filename, "a", encoding="utf-8") as f:
+        while True:
+            item = output_queue.get()
+            if item is None:
+                output_queue.task_done()
+                break
+            try:
+                f.write(item)
+                f.flush()
+            except Exception as e:
+                print(f"[!] Error writing log: {e}")
+            finally:
+                output_queue.task_done()
+
 
 def queue_data_manager(ip: str, data: str, output: Queue, domain: str = "[None]") -> None:
     """
