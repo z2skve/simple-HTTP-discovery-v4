@@ -15,11 +15,12 @@ from v4colors import Colors
 
 socket.setdefaulttimeout(3.0)
 
+
 def process_found_ip(ip: str, output_queue: queue.Queue, response_obj) -> None:
     """
     Retrieves information if found of a given IP.
     """
-    
+
     try:
         domain = socket.gethostbyaddr(ip)[0]
     except socket.herror:
@@ -27,14 +28,14 @@ def process_found_ip(ip: str, output_queue: queue.Queue, response_obj) -> None:
     except Exception:
         domain = "[DNS Error]"
 
-    content_preview = response_obj.text[:2000] 
-    
-    print(Colors.info(f"[*] Procesando: {ip} -> {domain}"))
+    content_preview = response_obj.text[:2000]
+
+    print(Colors.info(f"[*] Processing: {ip} -> {domain}"))
 
     v4logger.queue_data_manager(
-        ip=ip, 
-        data=content_preview, 
-        output=output_queue, 
+        ip=ip,
+        data=content_preview,
+        output=output_queue,
         domain=domain
     )
 
@@ -46,18 +47,19 @@ def get_request(actual_ip: str, output_queue: queue.Queue, status_codes: list) -
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    } 
+    }
 
     try:
         response = requests.get(
-            f'http://{actual_ip}', 
-            timeout=2, 
+            f'http://{actual_ip}',
+            timeout=2,
             headers=headers,
             allow_redirects=True
         )
 
         if response.status_code in status_codes:
-            print(Colors.success(f"UP: {actual_ip} (Status: {response.status_code})"))
+            print(Colors.success(
+                f"UP: {actual_ip} (Status: {response.status_code})"))
             process_found_ip(actual_ip, output_queue, response)
 
     except requests.exceptions.ConnectTimeout:
@@ -78,7 +80,7 @@ def main() -> None:
     output_queue: queue = queue.Queue()
     num_ips_to_print: int = 256
 
-    start_ip: str 
+    start_ip: str
     end_ip: str
     status_codes: list[int]
 
@@ -99,7 +101,7 @@ def main() -> None:
     print(f"{'-'*20}\nPress Ctrl+C to stop searching.\n")
 
     writer_thread = threading.Thread(
-        target=v4logger.file_writer_worker, 
+        target=v4logger.file_writer_worker,
         args=(output_queue, filename)
     )
 
@@ -111,7 +113,7 @@ def main() -> None:
         while curr <= decimal_end:
             current_ip = v4parser.int_to_ip(curr)
 
-            if curr % num_ips_to_print == 0 : 
+            if curr % num_ips_to_print == 0:
                 print(Colors.status(f"Targeting: [{current_ip}]"))
 
             yield current_ip
@@ -122,7 +124,7 @@ def main() -> None:
     max_threads: int = 100
     #########################
 
-    max_queue_size: int= max_threads * 2 
+    max_queue_size: int = max_threads * 2
 
     semaphore = threading.BoundedSemaphore(value=max_queue_size)
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_threads)
@@ -132,9 +134,10 @@ def main() -> None:
 
     try:
         for current_ip in ip_generator():
-            
+
             semaphore.acquire()
-            future = executor.submit(get_request, current_ip, output_queue, status_codes)
+            future = executor.submit(
+                get_request, current_ip, output_queue, status_codes)
             future.add_done_callback(task_done_callback)
 
     except KeyboardInterrupt:
@@ -144,6 +147,7 @@ def main() -> None:
     finally:
         output_queue.put(None)
         writer_thread.join(timeout=5)
+
 
 if __name__ == "__main__":
     main()
