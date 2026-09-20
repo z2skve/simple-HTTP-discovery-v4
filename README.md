@@ -8,7 +8,7 @@ A high-performance, asynchronous IPv4 HTTP discovery tool written in Python. Des
 ## ✨ Features
 
 * **DNS Resolution:** Integrated reverse DNS lookups for discovered targets.
-* **Real-time Logging:** Asynchronous file writing via a dedicated worker thread.
+* **Real-time Logging:** Asynchronous file writing via a dedicated task.
 
 > ![License](pictures/cap1.png)
 
@@ -21,7 +21,7 @@ A high-performance, asynchronous IPv4 HTTP discovery tool written in Python. Des
    ```
 Install dependencies:
 ```bash
-pip install requests
+pip install aiohttp
 ```
 
 🚀 Usage
@@ -42,21 +42,21 @@ Arguments:
 simple-HTTP-discovery-v4/
 ├── logs/               # Scan results (log.txt)
 ├── src/
-│   ├── main.py         # Main logic & Threading control
+│   ├── main.py         # Main logic & Async event loop
 │   ├── v4colors.py     # ANSI Color constants & formatting
-│   ├── v4logger.py     # Async file writer worker
+│   ├── v4logger.py     # Async file writer task
 │   └── v4parser.py     # CLI argument parsing & IP math
 └── README.md
 ```
 
 ⚙️ Technical Architecture
 
-This tool implements a Producer-Consumer pattern with a Bounded Semaphore.
+This tool implements an asynchronous producer-consumer pattern using Python's `asyncio` and `aiohttp`.
 
-* **Producer**: The IP generator yields targets one by one.
-* **Semaphore**: Blocks the producer if there are more than double the threads active tasks.
-* **Workers**: Threads process HTTP requests and Reverse DNS.
-* **Logger**: A dedicated thread handles I/O operations to prevent disk-writing from slowing down the network scan.
+* **Async Event Loop**: Manages thousands of simultaneous non-blocking network requests.
+* **Semaphore**: Controls concurrency limits (e.g., 1000 simultaneous connections).
+* **Workers (Tasks)**: Lightweight asynchronous functions process HTTP requests and execute reverse DNS lookups in non-blocking executors.
+* **Logger**: An asynchronous background task handles I/O operations to prevent disk-writing from stalling network scanning.
 
 ⚠️ Disclaimer
 

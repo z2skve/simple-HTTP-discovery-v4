@@ -1,19 +1,22 @@
 ######################################################################
 #                            v4logger                                #
 ######################################################################
-from queue import Queue
+import asyncio
 
-def file_writer_worker(output_queue: Queue, filename: str) -> None:
+
+async def file_writer_worker(output_queue: asyncio.Queue, filename: str) -> None:
     """
-    Worker thread to write output data to a file.
+    Asynchronous worker task to write output data to a file.
     """
     with open(filename, "a", encoding="utf-8") as f:
         while True:
-            item = output_queue.get()
+            item = await output_queue.get()
             if item is None:
                 output_queue.task_done()
                 break
+
             try:
+                # Escribimos a disco.
                 f.write(item)
                 f.flush()
             except Exception as e:
@@ -22,24 +25,13 @@ def file_writer_worker(output_queue: Queue, filename: str) -> None:
                 output_queue.task_done()
 
 
-def queue_data_manager(ip: str, data: str, output: Queue, domain: str = "[None]") -> None:
+async def queue_data_manager(
+    ip: str, data: str, output: asyncio.Queue, domain: str = "[None]"
+) -> None:
     """
-    Saves data in a queue for later processing. 
-
-    Args:
-            ip: The IP address as a string.
-            data: The content to be saved.
-            domain: The domain name, if available.
-            output: A queue.Queue object to store formatted results.
+    Saves data in an async queue for later processing.
     """
-
     payload = (
-        f"Domain : {domain}\n"
-        f"IP : {ip}\n"
-        f"GET :\n\n"
-        f"{'-'*20}\n"
-        f"{data}\n"
-        f"{'-'*20}\n\n"
+        f"Domain : {domain}\nIP : {ip}\nGET :\n\n{'-' * 20}\n{data}\n{'-' * 20}\n\n"
     )
-
-    output.put(payload)
+    await output.put(payload)

@@ -3,86 +3,97 @@
 ######################################################################
 
 import os
-import queue
-import threading
-import concurrent.futures
-import requests
+import asyncio
 import socket
+import aiohttp
 
 import v4logger
 import v4parser
 from v4colors import Colors
 
+# General timeout adjustment for basic network operations
 socket.setdefaulttimeout(3.0)
 
 
-def process_found_ip(ip: str, output_queue: queue.Queue, response_obj) -> None:
+async def resolve_dns(ip: str) -> str:
     """
-    Retrieves information if found of a given IP.
+    Resolves the domain asynchronously using background threads
+    to avoid blocking the main event loop.
     """
-
     try:
-        domain = socket.gethostbyaddr(ip)[0]
+        loop = asyncio.get_running_loop()
+        domain_info = await loop.run_in_executor(None, socket.gethostbyaddr, ip)
+        return domain_info[0]
     except socket.herror:
-        domain = "[No Domain Resolved]"
+        return "[No Domain Resolved]"
     except Exception:
-        domain = "[DNS Error]"
+        return "[DNS Error]"
 
-    content_preview = response_obj.text[:2000]
+
+async def process_found_ip(
+    ip: str, output_queue: asyncio.Queue, text_content: str
+) -> None:
+    """
+    Retrieves information if found of a given IP asynchronously.
+    """
+    domain = await resolve_dns(ip)
+    content_preview = text_content[:2000]
 
     print(Colors.info(f"[*] Processing: {ip} -> {domain}"))
 
-    v4logger.queue_data_manager(
-        ip=ip,
-        data=content_preview,
-        output=output_queue,
-        domain=domain
+    await v4logger.queue_data_manager(
+        ip=ip, data=content_preview, output=output_queue, domain=domain
     )
 
 
-def get_request(actual_ip: str, output_queue: queue.Queue, status_codes: list) -> str | None:
+async def get_request(
+    actual_ip: str,
+    output_queue: asyncio.Queue,
+    status_codes: list,
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+) -> None:
     """
-    Simple function to retrieve if a URL is available.
+    Asynchronous function to check if a URL is available.
     """
-
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
 
-    try:
-        response = requests.get(
-            f'http://{actual_ip}',
-            timeout=2,
-            headers=headers,
-            allow_redirects=True
-        )
+    url = f"http://{actual_ip}"
 
-        if response.status_code in status_codes:
-            print(Colors.success(
-                f"UP: {actual_ip} (Status: {response.status_code})"))
-            process_found_ip(actual_ip, output_queue, response)
+    async with semaphore:
+        try:
+            async with session.get(
+                url, headers=headers, timeout=2.0, allow_redirects=True
+            ) as response:
+                if response.status in status_codes:
+                    print(
+                        Colors.success(f"UP: {actual_ip} (Status: {response.status})")
+                    )
 
-    except requests.exceptions.ConnectTimeout:
-        pass
-    except requests.exceptions.RequestException:
-        pass
+                    text_content = await response.text()
+                    await process_found_ip(actual_ip, output_queue, text_content)
+
+        except asyncio.TimeoutError:
+            pass
+        except aiohttp.ClientError:
+            pass
+        except Exception:
+            pass
 
 
-def main() -> None:
+async def async_main() -> None:
     """
-    Main function to run the HTTP discovery tool.
+    Main asynchronous function to run the HTTP discovery tool.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logs_dir = os.path.join(os.path.dirname(script_dir), "logs")
     filename = os.path.join(logs_dir, "log.txt")
     os.makedirs(logs_dir, exist_ok=True)
 
-    output_queue: queue = queue.Queue()
+    output_queue = asyncio.Queue()
     num_ips_to_print: int = 256
-
-    start_ip: str
-    end_ip: str
-    status_codes: list[int]
 
     start_ip, end_ip, status_codes = v4parser.parse_cli_args()
 
@@ -94,59 +105,53 @@ def main() -> None:
         return
 
     print(Colors.title())
-
     print(Colors.range_set(start_ip, end_ip))
     print(Colors.accepted_status(status_codes))
+    print(f"{'-' * 20}\nPress Ctrl+C to stop searching.\n")
 
-    print(f"{'-'*20}\nPress Ctrl+C to stop searching.\n")
-
-    writer_thread = threading.Thread(
-        target=v4logger.file_writer_worker,
-        args=(output_queue, filename)
+    writer_task = asyncio.create_task(
+        v4logger.file_writer_worker(output_queue, filename)
     )
 
-    writer_thread.daemon = True
-    writer_thread.start()
+    # Maximum number of simultaneous connections.
+    max_concurrent_tasks = 1000
+    semaphore = asyncio.Semaphore(max_concurrent_tasks)
 
-    def ip_generator():
+    connector = aiohttp.TCPConnector(limit=max_concurrent_tasks)
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = []
         curr = decimal_start
+
         while curr <= decimal_end:
             current_ip = v4parser.int_to_ip(curr)
 
             if curr % num_ips_to_print == 0:
                 print(Colors.status(f"Targeting: [{current_ip}]"))
 
-            yield current_ip
+            task = asyncio.create_task(
+                get_request(current_ip, output_queue, status_codes, session, semaphore)
+            )
+            tasks.append(task)
             curr += 1
 
-    # Number of threads to use
-    #########################
-    max_threads: int = 100
-    #########################
+            if len(tasks) >= 5000:
+                await asyncio.gather(*tasks)
+                tasks = []
 
-    max_queue_size: int = max_threads * 2
+        if tasks:
+            await asyncio.gather(*tasks)
 
-    semaphore = threading.BoundedSemaphore(value=max_queue_size)
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_threads)
+    # We send None to stop the log worker and wait
+    await output_queue.put(None)
+    await writer_task
 
-    def task_done_callback(_):
-        semaphore.release()
 
+def main():
     try:
-        for current_ip in ip_generator():
-
-            semaphore.acquire()
-            future = executor.submit(
-                get_request, current_ip, output_queue, status_codes)
-            future.add_done_callback(task_done_callback)
-
+        asyncio.run(async_main())
     except KeyboardInterrupt:
-        print(Colors.error("User interrupted. Stopping..."))
-        executor.shutdown(wait=False, cancel_futures=True)
-
-    finally:
-        output_queue.put(None)
-        writer_thread.join(timeout=5)
+        print(Colors.error("\nUser interrupted. Stopping..."))
 
 
 if __name__ == "__main__":
